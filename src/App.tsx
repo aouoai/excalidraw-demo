@@ -112,11 +112,13 @@ function App() {
   const initialShape = (() => {
     if (typeof window === 'undefined') return 'rectangle';
     const value = new URLSearchParams(window.location.search).get('shape');
-    return value === 'ellipse' || value === 'diamond' || value === 'rectangle' ? value : 'rectangle';
+    return value === 'ellipse' || value === 'diamond' || value === 'arrow' || value === 'rectangle' ? value : 'rectangle';
   })();
-  const [shape, setShape] = useState(initialShape); // 'rectangle' | 'ellipse' | 'diamond'
+  const [shape, setShape] = useState(initialShape); // 'rectangle' | 'ellipse' | 'diamond' | 'arrow'
   const [width, setWidth] = useState(320);
   const [height, setHeight] = useState(180);
+  const [arrowLength, setArrowLength] = useState(360);
+  const [arrowHeadSize, setArrowHeadSize] = useState(28);
   const [roughness, setRoughness] = useState(1);
   const [strokeWidth, setStrokeWidth] = useState(2);
   const [roundMode, setRoundMode] = useState('adaptive');
@@ -163,11 +165,20 @@ function App() {
       h: height,
     };
 
+    const arrow = {
+      x1: (cssWidth - arrowLength) / 2,
+      y1: cssHeight / 2,
+      x2: (cssWidth + arrowLength) / 2,
+      y2: cssHeight / 2,
+    };
+
     const minSide = Math.min(width, height);
     const radius = getCornerRadius(minSide, roundMode);
-    
+
     const shapeHasRoundness = shape === 'rectangle' || shape === 'diamond' ? radius > 0 : true;
-    const finalRoughness = adjustRoughness(width, height, roughness, shapeHasRoundness);
+    const finalRoughness = shape === 'arrow'
+      ? adjustRoughness(arrowLength, strokeWidth * 10, roughness, true)
+      : adjustRoughness(width, height, roughness, shapeHasRoundness);
 
     const roughOptions = {
       seed,
@@ -237,9 +248,40 @@ function App() {
       ctx.fillStyle = '#5b5b5b';
       ctx.fillText(radius > 0 ? `Adaptive corner radius · ${radius.toFixed(1)} px` : 'Straight edge rhombus geometry', cx, cy + 20);
       ctx.restore();
+    } else if (shape === 'arrow') {
+      const { x1, y1, x2, y2 } = arrow;
+      const angle = Math.atan2(y2 - y1, x2 - x1);
+      const headAngle = Math.PI / 7;
+      const hx1 = x2 - Math.cos(angle - headAngle) * arrowHeadSize;
+      const hy1 = y2 - Math.sin(angle - headAngle) * arrowHeadSize;
+      const hx2 = x2 - Math.cos(angle + headAngle) * arrowHeadSize;
+      const hy2 = y2 - Math.sin(angle + headAngle) * arrowHeadSize;
+
+      rc.line(x1, y1, x2, y2, {
+        ...roughOptions,
+        fill: undefined,
+      });
+      rc.line(x2, y2, hx1, hy1, {
+        ...roughOptions,
+        fill: undefined,
+      });
+      rc.line(x2, y2, hx2, hy2, {
+        ...roughOptions,
+        fill: undefined,
+      });
+
+      ctx.save();
+      ctx.fillStyle = '#1f1f1f';
+      ctx.font = '600 20px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Arrow', cssWidth / 2, cssHeight / 2 - 34);
+      ctx.font = '14px sans-serif';
+      ctx.fillStyle = '#5b5b5b';
+      ctx.fillText(`Length ${arrowLength}px · Head ${arrowHeadSize}px`, cssWidth / 2, cssHeight / 2 - 8);
+      ctx.restore();
     }
 
-    drawLabel(ctx, `roughness ${finalRoughness.toFixed(2)}`, cx, rect.y + rect.h + 48, 'center');
+    drawLabel(ctx, `roughness ${finalRoughness.toFixed(2)}`, shape === 'arrow' ? cssWidth / 2 : cx, shape === 'arrow' ? cssHeight / 2 + 46 : rect.y + rect.h + 48, 'center');
 
     const handleResize = () => {
       fitCanvas();
@@ -249,7 +291,7 @@ function App() {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
 
-  }, [shape, width, height, roughness, strokeWidth, roundMode, fillStyle, stroke, fill, seed]);
+  }, [shape, width, height, arrowLength, arrowHeadSize, roughness, strokeWidth, roundMode, fillStyle, stroke, fill, seed]);
 
   const handleDownload = () => {
     const canvas = canvasRef.current;
@@ -275,16 +317,32 @@ function App() {
               <option value="rectangle">圆角矩形 (Rectangle)</option>
               <option value="ellipse">椭圆 (Ellipse)</option>
               <option value="diamond">菱形 (Diamond)</option>
+              <option value="arrow">箭头 (Arrow)</option>
             </select>
           </div>
-          <div className="control">
-            <label><span>宽度</span><strong>{width} px</strong></label>
-            <input type="range" min="120" max="520" value={width} onChange={e => setWidth(Number(e.target.value))} />
-          </div>
-          <div className="control">
-            <label><span>高度</span><strong>{height} px</strong></label>
-            <input type="range" min="80" max="320" value={height} onChange={e => setHeight(Number(e.target.value))} />
-          </div>
+          {shape !== 'arrow' ? (
+            <>
+              <div className="control">
+                <label><span>宽度</span><strong>{width} px</strong></label>
+                <input type="range" min="120" max="520" value={width} onChange={e => setWidth(Number(e.target.value))} />
+              </div>
+              <div className="control">
+                <label><span>高度</span><strong>{height} px</strong></label>
+                <input type="range" min="80" max="320" value={height} onChange={e => setHeight(Number(e.target.value))} />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="control">
+                <label><span>箭头长度</span><strong>{arrowLength} px</strong></label>
+                <input type="range" min="180" max="620" value={arrowLength} onChange={e => setArrowLength(Number(e.target.value))} />
+              </div>
+              <div className="control">
+                <label><span>箭头尺寸</span><strong>{arrowHeadSize} px</strong></label>
+                <input type="range" min="12" max="56" value={arrowHeadSize} onChange={e => setArrowHeadSize(Number(e.target.value))} />
+              </div>
+            </>
+          )}
           <div className="control">
             <label><span>基础 roughness</span><strong>{roughness.toFixed(1)}</strong></label>
             <input type="range" min="0" max="4" step="0.1" value={roughness} onChange={e => setRoughness(Number(e.target.value))} />
@@ -303,24 +361,28 @@ function App() {
               </select>
             </div>
           )}
-          <div className="control">
-            <label><span>填充样式</span></label>
-            <select value={fillStyle} onChange={e => setFillStyle(e.target.value)}>
-              <option value="hachure">hachure</option>
-              <option value="solid">solid</option>
-              <option value="cross-hatch">cross-hatch</option>
-              <option value="zigzag">zigzag</option>
-              <option value="dots">dots</option>
-            </select>
-          </div>
+          {shape !== 'arrow' && (
+            <div className="control">
+              <label><span>填充样式</span></label>
+              <select value={fillStyle} onChange={e => setFillStyle(e.target.value)}>
+                <option value="hachure">hachure</option>
+                <option value="solid">solid</option>
+                <option value="cross-hatch">cross-hatch</option>
+                <option value="zigzag">zigzag</option>
+                <option value="dots">dots</option>
+              </select>
+            </div>
+          )}
           <div className="control">
             <label><span>描边颜色</span></label>
             <input type="color" value={stroke} onChange={e => setStroke(e.target.value)} />
           </div>
-          <div className="control">
-            <label><span>填充颜色</span></label>
-            <input type="color" value={fill} onChange={e => setFill(e.target.value)} />
-          </div>
+          {shape !== 'arrow' && (
+            <div className="control">
+              <label><span>填充颜色</span></label>
+              <input type="color" value={fill} onChange={e => setFill(e.target.value)} />
+            </div>
+          )}
           <div className="control">
             <label><span>随机种子</span><strong>{seed}</strong></label>
             <input type="range" min="1" max="999" step="1" value={seed} onChange={e => setSeed(Number(e.target.value))} />
