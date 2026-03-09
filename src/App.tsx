@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import rough from 'roughjs/bin/rough';
+import rough from 'roughjs';
 import './App.css';
 
 // Helper functions from the original script
