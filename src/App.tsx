@@ -49,6 +49,46 @@ function roundedRectPath(x: number, y: number, width: number, height: number, ra
   ].join(' ');
 }
 
+function bucketShapePaths(x: number, y: number, width: number, height: number, radius: number) {
+  const r = clamp(radius, 0, Math.min(width, height) / 2);
+
+  const strokePath = !r
+    ? [
+        `M ${x} ${y}`,
+        `L ${x} ${y + height}`,
+        `L ${x + width} ${y + height}`,
+        `L ${x + width} ${y}`,
+      ].join(' ')
+    : [
+        `M ${x} ${y}`,
+        `L ${x} ${y + height - r}`,
+        `Q ${x} ${y + height}, ${x + r} ${y + height}`,
+        `L ${x + width - r} ${y + height}`,
+        `Q ${x + width} ${y + height}, ${x + width} ${y + height - r}`,
+        `L ${x + width} ${y}`,
+      ].join(' ');
+
+  const fillPath = !r
+    ? [
+        `M ${x} ${y}`,
+        `L ${x} ${y + height}`,
+        `L ${x + width} ${y + height}`,
+        `L ${x + width} ${y}`,
+        'Z',
+      ].join(' ')
+    : [
+        `M ${x} ${y}`,
+        `L ${x} ${y + height - r}`,
+        `Q ${x} ${y + height}, ${x + r} ${y + height}`,
+        `L ${x + width - r} ${y + height}`,
+        `Q ${x + width} ${y + height}, ${x + width} ${y + height - r}`,
+        `L ${x + width} ${y}`,
+        'Z',
+      ].join(' ');
+
+  return { strokePath, fillPath };
+}
+
 function roundedDiamondPath(x: number, y: number, width: number, height: number, radius: number) {
   const cx = x + width / 2;
   const cy = y + height / 2;
@@ -112,19 +152,21 @@ function App() {
   const initialShape = (() => {
     if (typeof window === 'undefined') return 'rectangle';
     const value = new URLSearchParams(window.location.search).get('shape');
-    return value === 'ellipse' || value === 'diamond' || value === 'arrow' || value === 'rectangle' ? value : 'rectangle';
+    return value === 'ellipse' || value === 'diamond' || value === 'arrow' || value === 'bucket' || value === 'rectangle' ? value : 'rectangle';
   })();
-  const [shape, setShape] = useState(initialShape); // 'rectangle' | 'ellipse' | 'diamond' | 'arrow'
+  const [shape, setShape] = useState(initialShape); // 'rectangle' | 'ellipse' | 'diamond' | 'arrow' | 'bucket'
   const [width, setWidth] = useState(320);
   const [height, setHeight] = useState(180);
   const [arrowLength, setArrowLength] = useState(360);
   const [arrowHeadSize, setArrowHeadSize] = useState(28);
   const [roughness, setRoughness] = useState(1);
   const [strokeWidth, setStrokeWidth] = useState(2);
-  const [roundMode, setRoundMode] = useState('adaptive');
-  const [fillStyle, setFillStyle] = useState('solid');
-  const [stroke, setStroke] = useState('#e03131');
-  const [fill, setFill] = useState('#ffc9c9');
+  const initialParams = typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(window.location.search);
+  const [roundMode, setRoundMode] = useState(initialParams.get('roundMode') || 'adaptive');
+  const [fillStyle, setFillStyle] = useState(initialParams.get('fillStyle') || 'solid');
+  const [strokeStyle, setStrokeStyle] = useState(initialParams.get('strokeStyle') || 'solid');
+  const [stroke, setStroke] = useState(initialParams.get('stroke') || '#e03131');
+  const [fill, setFill] = useState(initialParams.get('fill') || '#ffc9c9');
   const [seed, setSeed] = useState(42);
 
   const drawLabel = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number, align: CanvasTextAlign = 'left') => {
@@ -175,15 +217,21 @@ function App() {
     const minSide = Math.min(width, height);
     const radius = getCornerRadius(minSide, roundMode);
 
-    const shapeHasRoundness = shape === 'rectangle' || shape === 'diamond' ? radius > 0 : true;
+    const shapeHasRoundness = shape === 'rectangle' || shape === 'diamond' || shape === 'bucket' ? radius > 0 : true;
     const finalRoughness = shape === 'arrow'
       ? adjustRoughness(arrowLength, strokeWidth * 10, roughness, true)
       : adjustRoughness(width, height, roughness, shapeHasRoundness);
 
+    const dashPattern = strokeStyle === 'dashed'
+      ? [strokeWidth * 6, strokeWidth * 4]
+      : strokeStyle === 'dotted'
+        ? [strokeWidth, strokeWidth * 3]
+        : undefined;
+
     const roughOptions = {
       seed,
       stroke,
-      strokeWidth,
+      strokeWidth: strokeStyle !== 'solid' ? strokeWidth + 0.5 : strokeWidth,
       roughness: finalRoughness,
       fill,
       fillStyle,
@@ -191,6 +239,8 @@ function App() {
       hachureGap: strokeWidth * 4,
       preserveVertices: true,
       bowing: 1.1,
+      disableMultiStroke: strokeStyle !== 'solid',
+      strokeLineDash: dashPattern,
     };
 
     const cx = rect.x + rect.w / 2;
@@ -248,6 +298,33 @@ function App() {
       ctx.fillStyle = '#5b5b5b';
       ctx.fillText(radius > 0 ? `Adaptive corner radius · ${radius.toFixed(1)} px` : 'Straight edge rhombus geometry', cx, cy + 20);
       ctx.restore();
+    } else if (shape === 'bucket') {
+      const { strokePath, fillPath } = bucketShapePaths(rect.x, rect.y, rect.w, rect.h, radius);
+      rc.path(fillPath, {
+        ...roughOptions,
+        stroke: 'transparent',
+      });
+      rc.path(strokePath, {
+        ...roughOptions,
+        fill: undefined,
+      });
+
+      ctx.save();
+      ctx.globalAlpha = 0.14;
+      ctx.lineWidth = 1.1;
+      ctx.strokeStyle = stroke;
+      ctx.stroke(new Path2D(strokePath));
+      ctx.restore();
+
+      ctx.save();
+      ctx.fillStyle = '#1f1f1f';
+      ctx.font = '600 20px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Bucket', cx, cy - 6);
+      ctx.font = '14px sans-serif';
+      ctx.fillStyle = '#5b5b5b';
+      ctx.fillText(radius > 0 ? `Open top · bottom radius ${radius.toFixed(1)} px` : 'Open top container geometry', cx, cy + 20);
+      ctx.restore();
     } else if (shape === 'arrow') {
       const { x1, y1, x2, y2 } = arrow;
       const angle = Math.atan2(y2 - y1, x2 - x1);
@@ -291,7 +368,7 @@ function App() {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
 
-  }, [shape, width, height, arrowLength, arrowHeadSize, roughness, strokeWidth, roundMode, fillStyle, stroke, fill, seed]);
+  }, [shape, width, height, arrowLength, arrowHeadSize, roughness, strokeWidth, roundMode, fillStyle, strokeStyle, stroke, fill, seed]);
 
   const handleDownload = () => {
     const canvas = canvasRef.current;
@@ -317,6 +394,7 @@ function App() {
               <option value="rectangle">圆角矩形 (Rectangle)</option>
               <option value="ellipse">椭圆 (Ellipse)</option>
               <option value="diamond">菱形 (Diamond)</option>
+              <option value="bucket">桶 (Bucket)</option>
               <option value="arrow">箭头 (Arrow)</option>
             </select>
           </div>
@@ -351,7 +429,7 @@ function App() {
             <label><span>描边宽度</span><strong>{strokeWidth.toFixed(1)} px</strong></label>
             <input type="range" min="1" max="6" step="0.5" value={strokeWidth} onChange={e => setStrokeWidth(Number(e.target.value))} />
           </div>
-          {(shape === 'rectangle' || shape === 'diamond') && (
+          {(shape === 'rectangle' || shape === 'diamond' || shape === 'bucket') && (
             <div className="control">
               <label><span>圆角模式</span></label>
               <select value={roundMode} onChange={e => setRoundMode(e.target.value)}>
@@ -373,6 +451,14 @@ function App() {
               </select>
             </div>
           )}
+          <div className="control">
+            <label><span>边框样式</span></label>
+            <select value={strokeStyle} onChange={e => setStrokeStyle(e.target.value)}>
+              <option value="solid">solid</option>
+              <option value="dashed">dashed</option>
+              <option value="dotted">dotted</option>
+            </select>
+          </div>
           <div className="control">
             <label><span>描边颜色</span></label>
             <input type="color" value={stroke} onChange={e => setStroke(e.target.value)} />
