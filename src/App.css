@@ -1,0 +1,133 @@
+:root {
+  --bg: #f7f6f3;
+  --panel: rgba(255,255,255,.88);
+  --line: #d8d4cc;
+  --text: #222;
+  --muted: #666;
+  --accent: #4c6ef5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: radial-gradient(circle at top, #fff, var(--bg) 45%);
+  color: var(--text);
+}
+
+.wrap {
+  max-width: 1200px;
+  margin: 24px auto;
+  padding: 0 16px 24px;
+}
+
+h1 {
+  font-size: 24px;
+  margin: 0 0 8px;
+}
+
+.sub {
+  color: var(--muted);
+  margin-bottom: 16px;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 16px;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid rgba(0,0,0,.08);
+  border-radius: 16px;
+  box-shadow: 0 10px 35px rgba(0,0,0,.06);
+  backdrop-filter: blur(8px);
+}
+
+.controls {
+  padding: 16px;
+}
+
+.controls h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.control {
+  margin-bottom: 12px;
+}
+
+label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  margin-bottom: 6px;
+  color: #333;
+}
+
+input[type="range"], select, button {
+  width: 100%;
+}
+
+input[type="color"] {
+  width: 100%;
+  height: 36px;
+  border: 1px solid rgba(0,0,0,.1);
+  border-radius: 10px;
+  background: #fff;
+  padding: 2px;
+}
+
+button {
+  height: 40px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: #111;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin-top: 10px;
+}
+
+.stage {
+  padding: 12px;
+}
+
+canvas {
+  width: 100%;
+  height: 760px;
+  display: block;
+  background:
+    linear-gradient(90deg, transparent 24px, rgba(0,0,0,.03) 25px),
+    linear-gradient(transparent 24px, rgba(0,0,0,.03) 25px),
+    #fcfbf8;
+  background-size: 25px 25px;
+  border-radius: 16px;
+  border: 1px solid rgba(0,0,0,.08);
+}
+
+code {
+  background: rgba(0,0,0,.06);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+@media (max-width: 960px) {
+  .layout { grid-template-columns: 1fr; }
+  canvas { height: 620px; }
+}
