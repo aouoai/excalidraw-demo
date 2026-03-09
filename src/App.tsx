@@ -214,16 +214,6 @@ function App() {
       // Rough.js ellipse takes center coordinates, width, and height
       rc.ellipse(cx, cy, rect.w, rect.h, roughOptions);
 
-      // Clean border overlay
-      ctx.save();
-      ctx.globalAlpha = 0.14;
-      ctx.lineWidth = 1.1;
-      ctx.strokeStyle = stroke;
-      ctx.beginPath();
-      ctx.ellipse(cx, cy, rect.w / 2, rect.h / 2, 0, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-
       ctx.save();
       ctx.fillStyle = '#1f1f1f';
       ctx.font = '600 20px sans-serif';
