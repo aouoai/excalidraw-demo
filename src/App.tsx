@@ -74,8 +74,25 @@ function getAnchorOnRoundedRect(rect: { x: number; y: number; w: number; h: numb
   return { x, y };
 }
 
+function getAnchorOnEllipse(rect: { x: number; y: number; w: number; h: number }, target: { x: number; y: number }, gap = 10) {
+  const cx = rect.x + rect.w / 2;
+  const cy = rect.y + rect.h / 2;
+  const rx = rect.w / 2 + gap;
+  const ry = rect.h / 2 + gap;
+  
+  const dx = target.x - cx;
+  const dy = target.y - cy;
+  const angle = Math.atan2(dy, dx);
+  
+  return {
+    x: cx + rx * Math.cos(angle),
+    y: cy + ry * Math.sin(angle)
+  };
+}
+
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [shape, setShape] = useState('rectangle'); // 'rectangle' | 'ellipse'
   const [width, setWidth] = useState(320);
   const [height, setHeight] = useState(180);
   const [roughness, setRoughness] = useState(1.2);
@@ -151,11 +168,11 @@ function App() {
 
     const minSide = Math.min(width, height);
     const radius = getCornerRadius(minSide, roundMode);
-    const finalRoughness = adjustRoughness(width, height, roughness, radius > 0);
+    
+    // In Excalidraw, ellipses also get roughness adjusted similarly
+    const finalRoughness = adjustRoughness(width, height, roughness, shape === 'rectangle' ? radius > 0 : true);
 
-    const path = roundedRectPath(rect.x, rect.y, rect.w, rect.h, radius);
-
-    rc.path(path, {
+    const roughOptions = {
       seed,
       stroke,
       strokeWidth,
@@ -166,24 +183,56 @@ function App() {
       hachureGap: strokeWidth * 4,
       preserveVertices: true,
       bowing: 1.1,
-    });
+    };
 
-    ctx.save();
-    ctx.globalAlpha = 0.14;
-    ctx.lineWidth = 1.1;
-    ctx.strokeStyle = stroke;
-    const p = new Path2D(path);
-    ctx.stroke(p);
-    ctx.restore();
+    if (shape === 'rectangle') {
+      const path = roundedRectPath(rect.x, rect.y, rect.w, rect.h, radius);
+      rc.path(path, roughOptions);
 
-    ctx.save();
-    ctx.fillStyle = '#1f1f1f';
-    ctx.font = '600 20px sans-serif';
-    ctx.fillText('Hand-drawn rounded rectangle', rect.x + 22, rect.y + 42);
-    ctx.font = '14px sans-serif';
-    ctx.fillStyle = '#5b5b5b';
-    ctx.fillText('Custom path + controlled roughness + adaptive corner radius', rect.x + 22, rect.y + 70);
-    ctx.restore();
+      // Clean border overlay
+      ctx.save();
+      ctx.globalAlpha = 0.14;
+      ctx.lineWidth = 1.1;
+      ctx.strokeStyle = stroke;
+      const p = new Path2D(path);
+      ctx.stroke(p);
+      ctx.restore();
+
+      ctx.save();
+      ctx.fillStyle = '#1f1f1f';
+      ctx.font = '600 20px sans-serif';
+      ctx.fillText('Hand-drawn rounded rectangle', rect.x + 22, rect.y + 42);
+      ctx.font = '14px sans-serif';
+      ctx.fillStyle = '#5b5b5b';
+      ctx.fillText('Custom path + controlled roughness + adaptive corner radius', rect.x + 22, rect.y + 70);
+      ctx.restore();
+
+    } else if (shape === 'ellipse') {
+      const cx = rect.x + rect.w / 2;
+      const cy = rect.y + rect.h / 2;
+      
+      // Rough.js ellipse takes center coordinates, width, and height
+      rc.ellipse(cx, cy, rect.w, rect.h, roughOptions);
+
+      // Clean border overlay
+      ctx.save();
+      ctx.globalAlpha = 0.14;
+      ctx.lineWidth = 1.1;
+      ctx.strokeStyle = stroke;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rect.w / 2, rect.h / 2, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.save();
+      ctx.fillStyle = '#1f1f1f';
+      ctx.font = '600 20px sans-serif';
+      ctx.fillText('Hand-drawn ellipse', cx - 90, cy - 10);
+      ctx.font = '14px sans-serif';
+      ctx.fillStyle = '#5b5b5b';
+      ctx.fillText('Perfect geometrical skeleton with controlled hand-drawn noise', cx - 180, cy + 15);
+      ctx.restore();
+    }
 
     const externalPoints = [
       { x: 170, y: 120, label: 'top-left incoming' },
@@ -193,7 +242,10 @@ function App() {
     ];
 
     externalPoints.forEach((point, i) => {
-      const anchor = getAnchorOnRoundedRect(rect, point, 10);
+      const anchor = shape === 'rectangle' 
+        ? getAnchorOnRoundedRect(rect, point, 10) 
+        : getAnchorOnEllipse(rect, point, 10);
+        
       drawArrow(rc, point, anchor, {
         seed: seed + 10 + i * 10,
         stroke: '#3b5bdb',
@@ -214,39 +266,49 @@ function App() {
       drawLabel(ctx, point.label, point.x + 10, point.y - 10);
     });
 
-    drawLabel(ctx, `radius = ${radius.toFixed(1)} px`, rect.x, rect.y + rect.h + 40);
+    if (shape === 'rectangle') {
+      drawLabel(ctx, `radius = ${radius.toFixed(1)} px`, rect.x, rect.y + rect.h + 40);
+      drawLabel(ctx, '连接点会避开角，优先吸到边中段', rect.x, rect.y + rect.h + 80);
+    } else {
+      drawLabel(ctx, '连接点通过几何椭圆方程精确计算锚点', rect.x, rect.y + rect.h + 80);
+    }
     drawLabel(ctx, `effective roughness = ${finalRoughness.toFixed(2)}`, rect.x, rect.y + rect.h + 60);
-    drawLabel(ctx, '连接点会避开角，优先吸到边中段', rect.x, rect.y + rect.h + 80);
 
     const handleResize = () => {
       fitCanvas();
-      // force re-render trick or rely on state trigger, but let's just trigger a seed update to force
       setSeed(s => s + 0);
     };
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
 
-  }, [width, height, roughness, strokeWidth, roundMode, fillStyle, stroke, fill, seed]);
+  }, [shape, width, height, roughness, strokeWidth, roundMode, fillStyle, stroke, fill, seed]);
 
   const handleDownload = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const a = document.createElement('a');
     a.href = canvas.toDataURL('image/png');
-    a.download = 'excalidraw-rough-rect-demo.png';
+    a.download = `excalidraw-${shape}-demo.png`;
     a.click();
   };
 
   return (
     <div className="wrap">
-      <h1>Excalidraw 风格手绘圆角矩形</h1>
-      <div className="sub">复刻要点：自定义圆角 path、受控 roughness、自适应圆角、填充单独调参、连线避角。</div>
+      <h1>Excalidraw 风格手绘 Demo 🎨</h1>
+      <div className="sub">复刻要点：自定义 path、受控 roughness、自适应圆角、精确吸附。</div>
 
       <div className="layout">
         <div className="panel controls">
           <h2>参数</h2>
 
+          <div className="control">
+            <label><span>形状</span></label>
+            <select value={shape} onChange={e => setShape(e.target.value)}>
+              <option value="rectangle">圆角矩形 (Rectangle)</option>
+              <option value="ellipse">椭圆 (Ellipse)</option>
+            </select>
+          </div>
           <div className="control">
             <label><span>宽度</span><strong>{width} px</strong></label>
             <input type="range" min="120" max="520" value={width} onChange={e => setWidth(Number(e.target.value))} />
@@ -263,14 +325,16 @@ function App() {
             <label><span>描边宽度</span><strong>{strokeWidth.toFixed(1)} px</strong></label>
             <input type="range" min="1" max="6" step="0.5" value={strokeWidth} onChange={e => setStrokeWidth(Number(e.target.value))} />
           </div>
-          <div className="control">
-            <label><span>圆角模式</span></label>
-            <select value={roundMode} onChange={e => setRoundMode(e.target.value)}>
-              <option value="adaptive">adaptive</option>
-              <option value="proportional">proportional</option>
-              <option value="none">none</option>
-            </select>
-          </div>
+          {shape === 'rectangle' && (
+            <div className="control">
+              <label><span>圆角模式</span></label>
+              <select value={roundMode} onChange={e => setRoundMode(e.target.value)}>
+                <option value="adaptive">adaptive</option>
+                <option value="proportional">proportional</option>
+                <option value="none">none</option>
+              </select>
+            </div>
+          )}
           <div className="control">
             <label><span>填充样式</span></label>
             <select value={fillStyle} onChange={e => setFillStyle(e.target.value)}>
@@ -303,9 +367,9 @@ function App() {
 
           <div className="hint">
             这个 demo 故意模仿 Excalidraw 的几个关键细节：<br />
-            1. 圆角不是直接 <code>roundRect</code>，而是拼 path。<br />
-            2. 小尺寸会自动降低 roughness。<br />
-            3. 箭头连接矩形时会避开角点，优先贴边。<br />
+            1. 形状具有稳定的几何骨架（底层干净的 Path 或 Ellipse）。<br />
+            2. 尺寸变小会自动降低 roughness。<br />
+            3. 箭头连接时，计算严格的边缘交叉点。<br />
             4. 使用高 DPI canvas，避免发糊。
           </div>
         </div>
