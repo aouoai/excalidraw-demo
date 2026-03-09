@@ -49,95 +49,87 @@ function roundedRectPath(x: number, y: number, width: number, height: number, ra
   ].join(' ');
 }
 
-function centerOfRect(rect: { x: number; y: number; w: number; h: number }) {
-  return { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
-}
+function roundedDiamondPath(x: number, y: number, width: number, height: number, radius: number) {
+  const cx = x + width / 2;
+  const cy = y + height / 2;
+  const top = { x: cx, y };
+  const right = { x: x + width, y: cy };
+  const bottom = { x: cx, y: y + height };
+  const left = { x, y: cy };
+  const vertices = [top, right, bottom, left];
 
-function getAnchorOnRoundedRect(rect: { x: number; y: number; w: number; h: number }, target: { x: number; y: number }, gap = 10) {
-  const c = centerOfRect(rect);
-  const dx = target.x - c.x;
-  const dy = target.y - c.y;
-  const absDx = Math.abs(dx);
-  const absDy = Math.abs(dy);
-  const cornerBias = 0.86;
+  const edgeLens = vertices.map((p, i) => {
+    const next = vertices[(i + 1) % vertices.length];
+    return Math.hypot(next.x - p.x, next.y - p.y);
+  });
+  const minEdge = Math.min(...edgeLens);
+  const r = clamp(radius, 0, minEdge / 2 - 0.01);
 
-  let x, y;
-
-  if (absDx > absDy * cornerBias) {
-    x = dx > 0 ? rect.x + rect.w + gap : rect.x - gap;
-    y = clamp(target.y, rect.y + 18, rect.y + rect.h - 18);
-  } else {
-    x = clamp(target.x, rect.x + 18, rect.x + rect.w - 18);
-    y = dy > 0 ? rect.y + rect.h + gap : rect.y - gap;
+  if (!r) {
+    return [
+      `M ${top.x} ${top.y}`,
+      `L ${right.x} ${right.y}`,
+      `L ${bottom.x} ${bottom.y}`,
+      `L ${left.x} ${left.y}`,
+      'Z',
+    ].join(' ');
   }
 
-  return { x, y };
-}
+  const pts = vertices.map((curr, i) => {
+    const prev = vertices[(i - 1 + vertices.length) % vertices.length];
+    const next = vertices[(i + 1) % vertices.length];
+    const toPrevLen = Math.hypot(prev.x - curr.x, prev.y - curr.y);
+    const toNextLen = Math.hypot(next.x - curr.x, next.y - curr.y);
+    return {
+      enter: {
+        x: curr.x + ((prev.x - curr.x) / toPrevLen) * r,
+        y: curr.y + ((prev.y - curr.y) / toPrevLen) * r,
+      },
+      corner: curr,
+      exit: {
+        x: curr.x + ((next.x - curr.x) / toNextLen) * r,
+        y: curr.y + ((next.y - curr.y) / toNextLen) * r,
+      },
+    };
+  });
 
-function getAnchorOnEllipse(rect: { x: number; y: number; w: number; h: number }, target: { x: number; y: number }, gap = 10) {
-  const cx = rect.x + rect.w / 2;
-  const cy = rect.y + rect.h / 2;
-  const rx = rect.w / 2 + gap;
-  const ry = rect.h / 2 + gap;
-  
-  const dx = target.x - cx;
-  const dy = target.y - cy;
-  const angle = Math.atan2(dy, dx);
-  
-  return {
-    x: cx + rx * Math.cos(angle),
-    y: cy + ry * Math.sin(angle)
-  };
+  return [
+    `M ${pts[0].exit.x} ${pts[0].exit.y}`,
+    `L ${pts[1].enter.x} ${pts[1].enter.y}`,
+    `Q ${pts[1].corner.x} ${pts[1].corner.y}, ${pts[1].exit.x} ${pts[1].exit.y}`,
+    `L ${pts[2].enter.x} ${pts[2].enter.y}`,
+    `Q ${pts[2].corner.x} ${pts[2].corner.y}, ${pts[2].exit.x} ${pts[2].exit.y}`,
+    `L ${pts[3].enter.x} ${pts[3].enter.y}`,
+    `Q ${pts[3].corner.x} ${pts[3].corner.y}, ${pts[3].exit.x} ${pts[3].exit.y}`,
+    `L ${pts[0].enter.x} ${pts[0].enter.y}`,
+    `Q ${pts[0].corner.x} ${pts[0].corner.y}, ${pts[0].exit.x} ${pts[0].exit.y}`,
+    'Z',
+  ].join(' ');
 }
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [shape, setShape] = useState('rectangle'); // 'rectangle' | 'ellipse'
+  const initialShape = (() => {
+    if (typeof window === 'undefined') return 'rectangle';
+    const value = new URLSearchParams(window.location.search).get('shape');
+    return value === 'ellipse' || value === 'diamond' || value === 'rectangle' ? value : 'rectangle';
+  })();
+  const [shape, setShape] = useState(initialShape); // 'rectangle' | 'ellipse' | 'diamond'
   const [width, setWidth] = useState(320);
   const [height, setHeight] = useState(180);
-  const [roughness, setRoughness] = useState(1.2);
-  const [strokeWidth, setStrokeWidth] = useState(2.5);
+  const [roughness, setRoughness] = useState(1);
+  const [strokeWidth, setStrokeWidth] = useState(2);
   const [roundMode, setRoundMode] = useState('adaptive');
-  const [fillStyle, setFillStyle] = useState('hachure');
-  const [stroke, setStroke] = useState('#1e1e1e');
-  const [fill, setFill] = useState('#ffd8a8');
+  const [fillStyle, setFillStyle] = useState('solid');
+  const [stroke, setStroke] = useState('#e03131');
+  const [fill, setFill] = useState('#ffc9c9');
   const [seed, setSeed] = useState(42);
 
-  const drawArrow = (rc: any, from: any, to: any, opts: any) => {
-    rc.line(from.x, from.y, to.x, to.y, {
-      seed: opts.seed,
-      stroke: opts.stroke,
-      strokeWidth: opts.strokeWidth,
-      roughness: Math.min(1, opts.roughness),
-      bowing: 1,
-      preserveVertices: true,
-    });
-
-    const angle = Math.atan2(to.y - from.y, to.x - from.x);
-    const size = 14;
-    const a1 = angle - Math.PI / 8;
-    const a2 = angle + Math.PI / 8;
-
-    rc.line(to.x, to.y, to.x - Math.cos(a1) * size, to.y - Math.sin(a1) * size, {
-      seed: opts.seed + 1,
-      stroke: opts.stroke,
-      strokeWidth: opts.strokeWidth,
-      roughness: Math.min(1, opts.roughness),
-      preserveVertices: true,
-    });
-    rc.line(to.x, to.y, to.x - Math.cos(a2) * size, to.y - Math.sin(a2) * size, {
-      seed: opts.seed + 2,
-      stroke: opts.stroke,
-      strokeWidth: opts.strokeWidth,
-      roughness: Math.min(1, opts.roughness),
-      preserveVertices: true,
-    });
-  };
-
-  const drawLabel = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number) => {
+  const drawLabel = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number, align: CanvasTextAlign = 'left') => {
     ctx.save();
-    ctx.fillStyle = '#444';
+    ctx.fillStyle = '#555';
     ctx.font = '12px sans-serif';
+    ctx.textAlign = align;
     ctx.fillText(text, x, y);
     ctx.restore();
   };
@@ -164,13 +156,18 @@ function App() {
     ctx.clearRect(0, 0, cssWidth, cssHeight);
 
     const rc = rough.canvas(canvas);
-    const rect = { x: 310, y: 200, w: width, h: height };
+    const rect = {
+      x: (cssWidth - width) / 2,
+      y: (cssHeight - height) / 2,
+      w: width,
+      h: height,
+    };
 
     const minSide = Math.min(width, height);
     const radius = getCornerRadius(minSide, roundMode);
     
-    // In Excalidraw, ellipses also get roughness adjusted similarly
-    const finalRoughness = adjustRoughness(width, height, roughness, shape === 'rectangle' ? radius > 0 : true);
+    const shapeHasRoundness = shape === 'rectangle' || shape === 'diamond' ? radius > 0 : true;
+    const finalRoughness = adjustRoughness(width, height, roughness, shapeHasRoundness);
 
     const roughOptions = {
       seed,
@@ -185,84 +182,64 @@ function App() {
       bowing: 1.1,
     };
 
+    const cx = rect.x + rect.w / 2;
+    const cy = rect.y + rect.h / 2;
+
     if (shape === 'rectangle') {
       const path = roundedRectPath(rect.x, rect.y, rect.w, rect.h, radius);
       rc.path(path, roughOptions);
 
-      // Clean border overlay
       ctx.save();
       ctx.globalAlpha = 0.14;
       ctx.lineWidth = 1.1;
       ctx.strokeStyle = stroke;
-      const p = new Path2D(path);
-      ctx.stroke(p);
+      ctx.stroke(new Path2D(path));
       ctx.restore();
 
       ctx.save();
       ctx.fillStyle = '#1f1f1f';
       ctx.font = '600 20px sans-serif';
-      ctx.fillText('Hand-drawn rounded rectangle', rect.x + 22, rect.y + 42);
+      ctx.textAlign = 'center';
+      ctx.fillText('Rounded rectangle', cx, cy - 6);
       ctx.font = '14px sans-serif';
       ctx.fillStyle = '#5b5b5b';
-      ctx.fillText('Custom path + controlled roughness + adaptive corner radius', rect.x + 22, rect.y + 70);
+      ctx.fillText(radius > 0 ? `Adaptive corner radius · ${radius.toFixed(1)} px` : 'Straight corner geometry', cx, cy + 20);
       ctx.restore();
-
     } else if (shape === 'ellipse') {
-      const cx = rect.x + rect.w / 2;
-      const cy = rect.y + rect.h / 2;
-      
-      // Rough.js ellipse takes center coordinates, width, and height
       rc.ellipse(cx, cy, rect.w, rect.h, roughOptions);
 
       ctx.save();
       ctx.fillStyle = '#1f1f1f';
       ctx.font = '600 20px sans-serif';
-      ctx.fillText('Hand-drawn ellipse', cx - 90, cy - 10);
+      ctx.textAlign = 'center';
+      ctx.fillText('Ellipse', cx, cy - 6);
       ctx.font = '14px sans-serif';
       ctx.fillStyle = '#5b5b5b';
-      ctx.fillText('Perfect geometrical skeleton with controlled hand-drawn noise', cx - 180, cy + 15);
+      ctx.fillText('Clean geometric skeleton with controlled roughness', cx, cy + 20);
       ctx.restore();
-    }
-
-    const externalPoints = [
-      { x: 170, y: 120, label: 'top-left incoming' },
-      { x: 760, y: 155, label: 'top-right incoming' },
-      { x: 165, y: 475, label: 'bottom-left incoming' },
-      { x: 845, y: 435, label: 'right incoming' },
-    ];
-
-    externalPoints.forEach((point, i) => {
-      const anchor = shape === 'rectangle' 
-        ? getAnchorOnRoundedRect(rect, point, 10) 
-        : getAnchorOnEllipse(rect, point, 10);
-        
-      drawArrow(rc, point, anchor, {
-        seed: seed + 10 + i * 10,
-        stroke: '#3b5bdb',
-        strokeWidth: 2.1,
-        roughness: 0.8,
-      });
+    } else if (shape === 'diamond') {
+      const path = roundedDiamondPath(rect.x, rect.y, rect.w, rect.h, radius);
+      rc.path(path, roughOptions);
 
       ctx.save();
-      ctx.fillStyle = '#3b5bdb';
-      ctx.beginPath();
-      ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(anchor.x, anchor.y, 4, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.globalAlpha = 0.14;
+      ctx.lineWidth = 1.1;
+      ctx.strokeStyle = stroke;
+      ctx.stroke(new Path2D(path));
       ctx.restore();
 
-      drawLabel(ctx, point.label, point.x + 10, point.y - 10);
-    });
-
-    if (shape === 'rectangle') {
-      drawLabel(ctx, `radius = ${radius.toFixed(1)} px`, rect.x, rect.y + rect.h + 40);
-      drawLabel(ctx, '连接点会避开角，优先吸到边中段', rect.x, rect.y + rect.h + 80);
-    } else {
-      drawLabel(ctx, '连接点通过几何椭圆方程精确计算锚点', rect.x, rect.y + rect.h + 80);
+      ctx.save();
+      ctx.fillStyle = '#1f1f1f';
+      ctx.font = '600 20px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(radius > 0 ? 'Rounded diamond' : 'Diamond', cx, cy - 6);
+      ctx.font = '14px sans-serif';
+      ctx.fillStyle = '#5b5b5b';
+      ctx.fillText(radius > 0 ? `Adaptive corner radius · ${radius.toFixed(1)} px` : 'Straight edge rhombus geometry', cx, cy + 20);
+      ctx.restore();
     }
-    drawLabel(ctx, `effective roughness = ${finalRoughness.toFixed(2)}`, rect.x, rect.y + rect.h + 60);
+
+    drawLabel(ctx, `roughness ${finalRoughness.toFixed(2)}`, cx, rect.y + rect.h + 48, 'center');
 
     const handleResize = () => {
       fitCanvas();
@@ -286,7 +263,7 @@ function App() {
   return (
     <div className="wrap">
       <h1>Excalidraw 风格手绘 Demo 🎨</h1>
-      <div className="sub">复刻要点：自定义 path、受控 roughness、自适应圆角、精确吸附。</div>
+      <div className="sub">先专注图形本体：矩形、椭圆、菱形的几何骨架、圆角和手绘感。</div>
 
       <div className="layout">
         <div className="panel controls">
@@ -297,6 +274,7 @@ function App() {
             <select value={shape} onChange={e => setShape(e.target.value)}>
               <option value="rectangle">圆角矩形 (Rectangle)</option>
               <option value="ellipse">椭圆 (Ellipse)</option>
+              <option value="diamond">菱形 (Diamond)</option>
             </select>
           </div>
           <div className="control">
@@ -315,7 +293,7 @@ function App() {
             <label><span>描边宽度</span><strong>{strokeWidth.toFixed(1)} px</strong></label>
             <input type="range" min="1" max="6" step="0.5" value={strokeWidth} onChange={e => setStrokeWidth(Number(e.target.value))} />
           </div>
-          {shape === 'rectangle' && (
+          {(shape === 'rectangle' || shape === 'diamond') && (
             <div className="control">
               <label><span>圆角模式</span></label>
               <select value={roundMode} onChange={e => setRoundMode(e.target.value)}>
@@ -349,18 +327,11 @@ function App() {
           </div>
 
           <div className="control">
-            <button onClick={() => setSeed(Math.floor(Math.random() * 999) + 1)}>换个 seed</button>
-          </div>
-          <div className="control">
             <button className="secondary" onClick={handleDownload}>下载 PNG</button>
           </div>
 
           <div className="hint">
-            这个 demo 故意模仿 Excalidraw 的几个关键细节：<br />
-            1. 形状具有稳定的几何骨架（底层干净的 Path 或 Ellipse）。<br />
-            2. 尺寸变小会自动降低 roughness。<br />
-            3. 箭头连接时，计算严格的边缘交叉点。<br />
-            4. 使用高 DPI canvas，避免发糊。
+            当前只关注图形本体：干净母路径、稳定 seed、尺寸相关 roughness、以及更克制的圆角处理。
           </div>
         </div>
 
