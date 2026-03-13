@@ -108,7 +108,8 @@ button.secondary {
   padding: 12px;
 }
 
-canvas {
+canvas,
+.stage-svg {
   width: 100%;
   height: 760px;
   display: block;
@@ -129,5 +130,5 @@ code {
 
 @media (max-width: 960px) {
   .layout { grid-template-columns: 1fr; }
-  canvas { height: 620px; }
+  canvas, .stage-svg { height: 620px; }
 }
